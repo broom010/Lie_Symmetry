@@ -106,7 +106,7 @@ def Dnx(f, n):
 
 # Create a moving frame dictionary to replace group parameters
 def moving_frame(A,K):
-    B = [A[i] - K[i] for i in range(len(A))]
+    B = [A[i] - K[i] for i in range(len(A))] 
     B = [b.subs(master_function_to_symbol) for b in B]
     return solve(B)[0]
 
@@ -131,17 +131,120 @@ def rec_Relations(Phantoms, frame):
         B.append(expression)
     return solve(B,[R1,R2,R3])
 
+def DI_x(f, mc_invariants):
+    s = f.subs(transformed_subs_forward)
+    w1 = apply_vect(v1,s.subs(transformed_subs_forward),A)
+    w2 = apply_vect(v2,s.subs(transformed_subs_forward),A)
+    w3 = apply_vect(v3,s.subs(transformed_subs_forward),A)
+    c1 = mc_invariants[R1]
+    c2 = mc_invariants[R2]
+    c3 = mc_invariants[R3]
+    print(invariantization(diff(f.subs(master_str_to_function),x).subs(master_function_to_str),frame))
+    expression = invariantization(diff(f.subs(master_str_to_function),x).subs(master_function_to_symbol),frame) + c1*invariantization(w1,frame) + c2*invariantization(w2,frame) + c3*invariantization(w3,frame)
+    return expression
 
+def exterior_diff(f,A):
+    C = []
+    f = f.subs(master_symbol_to_function)
+    n = max([ode_order(f,Function(var)) for var in A[1]])
+    f = f.subs(master_function_to_symbol)
+    var = fullJet(A[0],A[1],n)
+    for w in var:
+        C.append(diff(f,master_str_to_symbol[w]))
+    return C
 
+def add_Diff_Forms(C,D):
+    s = max(len(C),len(D))
+    C = C+[0]*(s-len(C))
+    D = D+[0]*(s-len(D))
+    return [a+b for a,b in zip(C,D)]
 
+def total_diff(f):
+    var = copy.copy(master_str_to_symbol.keys())
+    var.remove('x')
+    var.sort()
+    expr = diff(f,x)+0*x
+    for i in range(len(var)-1):
+        expr = expr + master_str_to_symbol[var[i+1]]*diff(f,master_str_to_symbol[var[i]])
+    return expr
 
+def vertical_diff(f):
+    C = []
+    f = f.subs(master_symbol_to_function)
+    n = max([ode_order(f,Function(var)) for var in A[1]])
+    var = fullJet(A[0],A[1],n)[1:]
+    f = f.subs(master_function_to_symbol)
+    for w in var:
+        C.append(diff(f,master_str_to_symbol[w]))
+    expr = 0*x
+    for i in range(len(C)):
+        expr = expr + C[i]*contact_symbol[i]
+    return expr
 
+def horizontal_diff(f):
+    return total_diff(f)*dx
 
+def rec_Relations_Forms(Phantoms, frame, A):
+    B = []
+    C = [0, contact_symbol[0], contact_symbol[1]]
+    for i in range(len(Phantoms)):
+        w = Phantoms[i]
+        s = w.subs(transformed_subs_forward)
+        w1 = apply_vect(v1,s.subs(transformed_subs_forward),A)
+        w2 = apply_vect(v2,s.subs(transformed_subs_forward),A)
+        w3 = apply_vect(v3,s.subs(transformed_subs_forward),A)
+        expression = C[i] + epsilon_1*invariantization(w1,frame) + epsilon_2*invariantization(w2,frame) + epsilon_3*invariantization(w3,frame)
+        B.append(expression)
+    return solve(B,[epsilon_1,epsilon_2,epsilon_3])
 
+def inv_D_x_contact(var_index, i):
+    w1 = invariantization(Lie_contact_diff(v1, var_index, i),frame)
+    w2 = invariantization(Lie_contact_diff(v2, var_index, i),frame)
+    w3 = invariantization(Lie_contact_diff(v3, var_index, i),frame)
+    return contact_symbol[var_index+2] + mc_invariants[R1]*w1+ mc_invariants[R2]*w2+ mc_invariants[R3]*w3
 
+def invariant_vert_diff(var_index, i):
+    expr = contact_symbol[var_index+2*i]
+    w1 = rec_forms[epsilon_1]*invariantization(Prolong(A[0],A[1],v1,i)[1+var_index+2*i],frame)
+    w2 = rec_forms[epsilon_2]*invariantization(Prolong(A[0],A[1],v2,i)[1+var_index+2*i],frame)
+    w3 = rec_forms[epsilon_3]*invariantization(Prolong(A[0],A[1],v3,i)[1+var_index+2*i],frame)
+    expr = expr + w1 + w2 + w3
+    return expr
 
+def invariant_Euler():
+    a11 = invariant_vert_diff(0,1).subs(contact_reduction).subs({contact_symbol[0]:1,contact_symbol[1]:0}).subs({D_x:-D_x})
+    a21 = invariant_vert_diff(0,1).subs(contact_reduction).subs({contact_symbol[0]:0,contact_symbol[1]:1}).subs({D_x:-D_x})
+    a12 = invariant_vert_diff(1,1).subs(contact_reduction).subs({contact_symbol[0]:1,contact_symbol[1]:0}).subs({D_x:-D_x})
+    a22 = invariant_vert_diff(1,1).subs(contact_reduction).subs({contact_symbol[0]:0,contact_symbol[1]:1}).subs({D_x:-D_x})
+    return Matrix([[a11,a12],[a21,a22]])
 
+def invariant_Hamilton():
+    r = [R1,R2,R3]
+    ep = [epsilon_1,epsilon_2,epsilon_3]
+    vectors = [v1,v2,v3]
+    w1 = 0*x
+    w2 = 0*x
+    for i in range(3):
+        w1 = w1-mc_invariants[r[i]]*diff(vectors[i][0],u)*contact_symbol[0]+total_diff(vectors[i][0])*rec_forms[ep[i]]
+        w2 = w2-mc_invariants[r[i]]*diff(vectors[i][0],P)*contact_symbol[1]
+    b1 = (w1+w2).subs({contact_symbol[0]:1, contact_symbol[1]:0}).subs({D_x:-D_x})
+    b2 = (w1+w2).subs({contact_symbol[0]:0, contact_symbol[1]:1}).subs({D_x:-D_x})
+    return Matrix([[b1],[b2]])
 
+def Euler(L,var_index):
+    var = ['u','P']
+    var_sub = [var[var_index]+'x'*k for k in range(1,3)]
+    expr = 0*x
+    for i in range(len(var_sub)):
+        expr = expr + (-1)**i*diff(diff(L,master_str_to_symbol[var_sub[i]]).subs(master_symbol_to_function),x,i)
+    return expr.subs(master_function_to_symbol)
+
+def inv_Euler_Lagrange(L):
+    inv_A = invariant_Euler()
+    inv_B = invariant_Hamilton()
+    expr1 = (inv_A[0,0]*Euler(L,0)+inv_A[0,1]*Euler(L,1)-L*inv_B[0,0]).subs({D_x:0})
+    expr2 = (inv_A[1,0]*Euler(L,0)+inv_A[1,1]*Euler(L,1)-L*inv_B[1,0]).subs({D_x:0})
+    return solve(Matrix([[expr1],[expr2]]))
 
 ###############################
 # Initialize variables
@@ -221,95 +324,125 @@ v1 = vect_Field(Phantoms, a)
 v2 = vect_Field(Phantoms, b)
 v3 = vect_Field(Phantoms, psi)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Define a class that will serve to define group actions. We will develop several class functions that
 # will make working with group actions easy.
 class groupAction:
-    def __init__(self,A,params,identity,transforms,n):
+
+    def __init__(self, A, params, n):
+
+        # Define a few basic pieces of information about the problem
         self.A = A
+        self.A_flat = [item for sublist in A for item in sublist]
+        self.n = n
         self.params = params
-        self.m = len(self.A)
-        self.r = len(self.params)
-        self.identity = identity
-        self.transforms = transforms
+        self.m = len(A)
+        self.r = len(params)
+        self.identity = 0             # to be modified later
+        self.transform = 0            # to be modified later
+        self.K = 0
+        self.frame = 0
 
-        self.ind_vars = dict((a, symbols(a)) for a in self.A[0])
-        self.dep_vars = self.dep_vars_jet(A,n)
-        self.dep_vars_functions = self.dep_vars_functions(A)
+        self.master_str_to_symbol = self.M_str_sym()
+        self.master_symbol_to_function = self.M_sym_fun()
+        self.master_function_to_symbol = reverse_dict(self.master_symbol_to_function)
+        self.contact_symbols = self.Contact_sym()
+        self.Ri = [symbols('R%d'%k) for k in range(1,self.r + 1)]
+        self.transformed_subs_backward = 0
+        self.transformed_subs_forward = 0
 
+        # add independent variables and group parameters to the module global variable list
+        globals().update(dict((p, symbols(p)) for p in params))
+        globals().update(dict((a, symbols(a)) for a in A[0]))
+        globals().update(self.master_str_to_symbol)
+        globals().update(dict((p, Function(p)(*A[0])) for p in A[1]))
+        globals().update(self.master_function_to_symbol)
+        globals().update(dict(('R%d'%k, symbols('R%d'%k)) for k in range(1,self.r + 1)))
 
+    def Def_transformation(self, expression, id, cross):
+        self.transform = expression
+        self.identity = id
+        self.K = cross
+        self.transformed_subs_backward = {symbols(self.A_flat[i]): expression[i].xreplace(self.master_function_to_symbol)  for i in range(len(self.A_flat))}
+        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
 
-        locals().update(self.master_str_to_function)
-        locals().update(self.master_str_to_symbol)
-
-    def dep_vars_jet(A,n):
+    def M_str_sym(self):
         B = {}
-        for i in range(len(A[1])):
-            for j in range(len(A[0])):
-                B = merge_two_dicts(B, dict((A[1][i]+'_'*(1-int(k == 0))+A[0][j]*k, symbols(A[1][i]+'_'*(1-int(k == 0))+A[0][j]*k)) for k in range(n+1)))
+        for i in range(len(self.A[1])):
+            for j in range(len(self.A[0])):
+                B = merge_two_dicts(B, dict((p, symbols(str(p[0])+'_'*(1-int(len(p)==1))+str(p[1:]))) for p in fullJet(self.A[0],self.A[1],self.n)))
         return B
 
-    def dep_vars_jet_functions(A):
+    def Dep_functions(self):
         B = {}
-        for i in range(len(A[1])):
-            for j in range(len(A[0])):
-                B = merge_two_dicts(B, dict((A[1][i]+'_'*(1-int(k == 0))+A[0][j]*k, Function(A[1][i]+'_'*(1-int(k == 0))+A[0][j]*k)) for k in range(n+1)))
+        for i in range(len(self.A[1])):
+            for j in range(self.A[0]):
+                B = merge_two_dicts(B, {self.A[1][i]: Function(self.A[1][j])(*self.A[0])})
         return B
 
-    def dep_vars_functions(A):
+    def M_sym_fun(self):
         B = {}
-        for i in range(len(A[1])):
-            for j in range(len(A[0])):
-                B = merge_two_dicts(B, {A[1][i]: Function(A[1][j])(*A[0])})
+        for i in range(len(self.A[1])):
+            for j in range(self.n+1):
+                B = merge_two_dicts(B, {symbols(str(self.A[1][i])+'_'*(1-int(j==0))+self.A[0][0]*j): diff(Function(self.A[1][i])(self.A[0][0]),self.A[0][0], j)}) 
+        B = merge_two_dicts(B,{symbols(self.A[0][0]):self.A[0][0]})
         return B
 
-    # Define a class function that returns a basis for the infinitesimal generators    
-    def vect(self):
+    def Contact_sym(self):
+        contact_sym = []
+        for i in range(self.n):
+            for p in self.A[1]:
+                contact_sym.append(Symbol('vartheta^'+p+'_'+str(i)))
+        return contact_sym
+
+    def vect_Field(self):
         v = []
-        for j in range(self.r):
-            f = []
-            for i in range(self.m):
-                f.append(diff(self.function[i],self.params[j]).subs(self.params[j],self.identity[i]))
-            v.append(f)
+        for i in range(len(self.A)):
+            v.append(diff(self.A[i],self.param).subs({self.param:0}))
         return v
+
+    def apply_vect(self, v,f):
+        n = max([ode_order(f,Function(var)) for var in self.A[1]])
+        f = f.subs(self.master_function_to_symbol)
+        var = fullJet(self.A[0],self.A[1],n)
+        v = Prolong(self.A[0],self.A[1], v, n)
+        g = 0
+        for i in range(len(v)):
+            g = g + diff(f,self.master_str_to_symbol[var[i]])*v[i]
+        return g.subs(self.master_function_to_symbol)
+
+    def Dx(self, f):
+        f = f.xreplace(self.transformed_subs_backward).subs(self.master_symbol_to_function)
+        return (1/diff(self.transform[0],self.A_flat[0]).subs(self.frame)*diff(f,self.A_flat[0]).subs(self.frame)).subs(self.master_function_to_symbol)
+
+    def Dnx(self, f, n):
+        f = Dx(f)
+        for i in range(n-1):
+            f = 1/diff(self.transform[0],self.A_flat[0]).subs(self.frame)*diff(f,x)
+        return simplify(f).subs(self.master_function_to_symbol)
+
+    # Create a moving frame dictionary to replace group parameters
+    def moving_frame(self):
+        B = [self.transform[i] - self.K[i] for i in range(len(self.transform))]
+        B = [b.xreplace(self.master_function_to_symbol) for b in B]
+        self.frame =  solve(B,self.params, dict=True)[0]
+
+    def invariantization(f,frame):
+        f = f.xreplace(transformed_subs_backward)
+        return simplify(f.subs(frame)).subs(self.master_function_to_symbol)
+
+    def normalized_invariant(U,n,frame):
+        f = Dnx(U,n)
+        return simplify(f.subs(frame)).subs(master_function_to_symbol)
+
+    # Return the Maurer-Cartan invariants
+    def rec_Relations(Phantoms, frame):
+        B = []
         
-    # Define an implicit differentiation operator d/dy
-    def implicit(self,f):
-        return (1/diff(self.function[0],self.X[0]))*diff(f,self.X[0])
-    
-    # Define a class function that returns the prolonged infinitesimal generators
-    def prolong_Vect(self,n,i):
-        return Prolong(self.X,self.U,self.vect()[i],n)
-    
-    # Define a class function that returns pr v^(n)[f]    
-    def my_Op(self,v,j,n,f):
-        my_Var = self.X 
-        for i in range(n+1):
-            my_Var = my_Var + nJet(self.X, self.U, i)
-        prV = self.prolong_Vect(n,j)
-        F = []
-        G = 0
-        for i in range(len(my_Var)):
-           F.append(prV[i]*diff(f,my_Var[i]))
-        for i in range(len(F)):
-            G = G+F[i]
-        print F
-        return G
+        for w in Phantoms:
+            s = w.subs(transformed_subs_forward)
+            w1 = apply_vect(v1,s.subs(transformed_subs_forward),A)
+            w2 = apply_vect(v2,s.subs(transformed_subs_forward),A)
+            w3 = apply_vect(v3,s.subs(transformed_subs_forward),A)
+            expression = invariantization(diff(s.subs(reverse_dict(master_function_to_symbol)),x).subs(master_function_to_symbol),frame) + R1*invariantization(w1,frame) + R2*invariantization(w2,frame) + R3*invariantization(w3,frame)
+            B.append(expression)
+        return solve(B,[R1,R2,R3])
