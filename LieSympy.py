@@ -406,15 +406,11 @@ class groupAction:
             g = g + diff(f,self.master_str_to_symbol[var[i]])*v[i]
         return g.subs(self.master_function_to_symbol)
 
-    def Dx(self, f):
-        f = f.subs(self.master_symbol_to_function)
-        return (1/(diff(self.transform[0],self.A_flat[0]).subs(self.frame))*diff(f,self.A_flat[0])).subs(self.frame).subs(self.master_function_to_symbol)
-
     def Dnx(self, f, n):
         for i in range(n):
-            f = f.subs(self.master_symbol_to_function)
-            f = (1/(diff(self.transform[0],self.A_flat[0]))*diff(f,self.A_flat[0])).subs(self.master_function_to_symbol)
-        return simplify(f.subs(self.frame).subs(self.master_function_to_symbol))
+            f = f.xreplace(self.transformed_subs_backward).subs(self.master_symbol_to_function)
+            f = (1/(diff(self.transform[0],self.A_flat[0]))*diff(f,self.A_flat[0])).xreplace(self.master_function_to_symbol)
+        return simplify(f.xreplace(self.frame).xreplace(self.master_function_to_symbol))
 
     # Create a moving frame dictionary to replace group parameters
     def moving_frame(self):
