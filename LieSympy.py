@@ -328,38 +328,84 @@ class groupAction:
 
         # Define a few basic pieces of information about the problem
         self.A = A
+        self.A_jet = [str(p[0])+'_'*(1-int(len(p)==1))+str(p[1:]) for p in fullJet(A[0],A[1],n)]
         self.A_flat = [item for sublist in A for item in sublist]
         self.n = n
+        self.m = len(self.A_flat)
         self.params = params
-        self.m = len(A)
         self.r = len(params)
         self.identity = 0             # to be modified later
+        self.cross_section_indx = 0
         self.transform = 0            # to be modified later
         self.K = 0
         self.frame = 0
+        self.normals = 0
+        self.normals_substitution = 0
+        self.Phantoms = 0
+        self.vectors = 0
+        self.mc_invariants = 0
 
         self.master_str_to_symbol = self.M_str_sym()
+        self.master_symbol_to_str = reverse_dict(self.master_str_to_symbol)
+        self.master_str_to_function = self.M_str_fun()
+        self.master_function_to_str = reverse_dict(self.master_str_to_function)
         self.master_symbol_to_function = self.M_sym_fun()
         self.master_function_to_symbol = reverse_dict(self.master_symbol_to_function)
+
         self.contact_symbols = self.Contact_sym()
         self.Ri = [symbols('R%d'%k) for k in range(1,self.r + 1)]
+        self.ep = [symbols('varepsilon%d'%k) for k in range(1,self.r + 1)]
         self.transformed_subs_backward = 0
         self.transformed_subs_forward = 0
 
         # add independent variables and group parameters to the module global variable list
+        globals().update({'iota':symbols('iota')})
         globals().update(dict((p, symbols(p)) for p in params))
         globals().update(dict((a, symbols(a)) for a in A[0]))
         globals().update(self.master_str_to_symbol)
         globals().update(dict((p, Function(p)(*A[0])) for p in A[1]))
         globals().update(self.master_function_to_symbol)
-        globals().update(dict(('R%d'%k, symbols('R%d'%k)) for k in range(1,self.r + 1)))
+        globals().update(dict((p, symbols(p)) for p in self.initialize_normals()))
+        # globals().update(dict(('R%d'%k, symbols('R%d'%k)) for k in range(1,self.r + 1)))
+
+    # OLD VERSION
+    #  def Def_transformation(self, expression, id, cross):
+    #     self.transform = expression
+    #     self.identity = id
+    #     self.K = cross
+    #     self.transformed_subs_backward = {symbols(self.A_flat[i]): expression[i].xreplace(self.master_function_to_symbol)  for i in range(self.m)}
+    #     self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
+
+    def initialize_normals(self):
+        C = ['H']
+        for i in range(self.n+1):
+            for p in self.A[1]:
+                C.append('I^'+str(p)+'_'+str(i))
+        return C
 
     def Def_transformation(self, expression, id, cross):
         self.transform = expression
         self.identity = id
-        self.K = cross
-        self.transformed_subs_backward = {symbols(self.A_flat[i]): expression[i].xreplace(self.master_function_to_symbol)  for i in range(len(self.A_flat))}
+        self.K = cross[0]
+        self.cross_section_indx = []
+        for p in cross[1]:
+            self.cross_section_indx.append(self.A_jet.index((p.xreplace(self.master_function_to_symbol)).xreplace(self.master_symbol_to_str)))
+        self.transformed_subs_backward = {symbols(self.A_flat[i]): expression[i].xreplace(self.master_function_to_symbol)  for i in range(self.m)}
         self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
+        for i in range(1,self.n+1):
+            for p in self.A[1]:
+                self.transform.append(self.Dnx(symbols(p),i))
+        self.transformed_subs_backward = {symbols(self.A_jet[i]): self.transform[i].xreplace(self.master_function_to_symbol)  for i in range(len(self.A_jet))}
+        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
+        self.moving_frame()
+        C = self.initialize_normals()
+        self.normals = dict((symbols(C[i]), self.invariantization(symbols(self.A_jet[i]))) for i in range(len(self.A_jet)))
+        self.normals_substitution = dict((symbols(self.A_jet[i]), symbols(C[i])) for i in range(len(self.A_jet)))
+        for i in self.cross_section_indx:
+            self.normals_substitution[symbols(self.A_jet[i])] = 0
+        self.Phantoms = [self.transform[self.cross_section_indx[i]].xreplace(self.master_function_to_symbol) for i in range(len(self.K))]
+        self.create_vectors()
+        self.rec_Relations()
 
     def M_str_sym(self):
         B = {}
@@ -383,6 +429,14 @@ class groupAction:
         B = merge_two_dicts(B,{symbols(self.A[0][0]):self.A[0][0]})
         return B
 
+    def M_str_fun(self):
+        B = {}
+        for i in range(len(self.A[1])):
+            for j in range(self.n+1):
+                B = merge_two_dicts(B, {self.A[1][i]+self.A[0][0]*j: diff(Function(self.A[1][i])(self.A[0][0]),self.A[0][0], j)})
+        B = merge_two_dicts(B,{symbols(self.A[0][0]):self.A[0][0]})
+        return B
+
     def Contact_sym(self):
         contact_sym = []
         for i in range(self.n):
@@ -390,11 +444,17 @@ class groupAction:
                 contact_sym.append(Symbol('vartheta^'+p+'_'+str(i)))
         return contact_sym
 
-    def vect_Field(self):
+    def vect_Field(self, y):
         v = []
-        for i in range(len(self.A)):
-            v.append(diff(self.A[i],self.param).subs({self.param:0}))
+        C = self.transform[:self.m]
+        for i in range(len(C)):
+            v.append(diff(C[i],y).subs({y:0}))
         return v
+    
+    def create_vectors(self):
+        self.vectors = []
+        for i in range(self.r):
+            self.vectors.append(self.vect_Field(self.params[i]))
 
     def apply_vect(self, v,f):
         n = max([ode_order(f,Function(var)) for var in self.A[1]])
@@ -410,31 +470,47 @@ class groupAction:
         for i in range(n):
             f = f.xreplace(self.transformed_subs_backward).subs(self.master_symbol_to_function)
             f = (1/(diff(self.transform[0],self.A_flat[0]))*diff(f,self.A_flat[0])).xreplace(self.master_function_to_symbol)
+        return simplify(f.xreplace(self.master_function_to_symbol))
+
+    def normalized_invariant(self, f, n):
+        for i in range(n):
+            f = f.xreplace(self.transformed_subs_backward).subs(self.master_symbol_to_function)
+            f = (1/(diff(self.transform[0],self.A_flat[0]))*diff(f,self.A_flat[0])).xreplace(self.master_function_to_symbol)
         return simplify(f.xreplace(self.frame).xreplace(self.master_function_to_symbol))
 
+    def normalize(self):
+        self.normals = ['I']
+        for i in range(self.n):
+            for p in self.A[1]:
+                self.normals.append('H^'+str(p)+'_'+str(i))
+
     # Create a moving frame dictionary to replace group parameters
+
+    # OLD VERSION
+    # def moving_frame(self):
+    #     B = [self.transform[i] - self.K[i] for i in range(len(self.transform))]
+    #     B = [b.xreplace(self.master_function_to_symbol) for b in B]
+    #     self.frame =  solve(B,self.params, dict=True)[0]
+    
     def moving_frame(self):
-        B = [self.transform[i] - self.K[i] for i in range(len(self.transform))]
+        B = [self.transform[self.cross_section_indx[i]] - self.K[i] for i in range(len(self.K))]
         B = [b.xreplace(self.master_function_to_symbol) for b in B]
         self.frame =  solve(B,self.params, dict=True)[0]
 
-    def invariantization(f,frame):
-        f = f.xreplace(transformed_subs_backward)
-        return simplify(f.subs(frame)).subs(self.master_function_to_symbol)
-
-    def normalized_invariant(U,n,frame):
-        f = Dnx(U,n)
-        return simplify(f.subs(frame)).subs(master_function_to_symbol)
+    def invariantization(self,f):
+        f = f.xreplace(self.master_function_to_symbol).xreplace(self.transformed_subs_backward)
+        return simplify(f.xreplace(self.frame))
 
     # Return the Maurer-Cartan invariants
-    def rec_Relations(Phantoms, frame):
+    def rec_Relations(self):
         B = []
         
-        for w in Phantoms:
-            s = w.subs(transformed_subs_forward)
-            w1 = apply_vect(v1,s.subs(transformed_subs_forward),A)
-            w2 = apply_vect(v2,s.subs(transformed_subs_forward),A)
-            w3 = apply_vect(v3,s.subs(transformed_subs_forward),A)
-            expression = invariantization(diff(s.subs(reverse_dict(master_function_to_symbol)),x).subs(master_function_to_symbol),frame) + R1*invariantization(w1,frame) + R2*invariantization(w2,frame) + R3*invariantization(w3,frame)
+        for w in self.Phantoms:
+            s = w.subs(self.transformed_subs_forward)
+            C1 = [self.apply_vect(self.vectors[i],s.subs(self.transformed_subs_forward)).xreplace(self.master_function_to_symbol).xreplace(self.normals_substitution) for i in range(self.r)]
+            C1.insert(0,diff(s.xreplace(self.master_symbol_to_function),x).subs(self.master_function_to_symbol).xreplace(self.normals_substitution))
+            C2 = self.Ri[:]
+            C2.insert(0,1)
+            expression = sum([a*b for (a,b) in zip(C1,C2)])
             B.append(expression)
-        return solve(B,[R1,R2,R3])
+        self.mc_invariants = solve(B, self.Ri)
