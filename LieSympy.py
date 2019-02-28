@@ -77,9 +77,15 @@ def Prolong(A, v, n):
                 a.append(c)
     return a
 
-####################################
-# Dictionary Functions
-####################################
+def print_vector(v, Jet):
+    temp = 0*x
+    for i in range(len(v)):
+        temp = temp + v[i]*Symbol('\\, \\dfrac{\\partial}{\\partial ' + str(Jet[i]) + '}', commutative=False)
+    return temp
+
+############################################
+# Dictionary and subset solution Functions
+############################################
 
 # Define dictionary merge and reverse dict
 def merge_two_dicts(x, y):
@@ -89,6 +95,17 @@ def merge_two_dicts(x, y):
 
 def reverse_dict(D):
     return {v: k for k, v in D.iteritems()}
+
+def findsubsets(S,m):
+    return set(combinations(S, m))
+
+def find_solutions(eqs, params):
+    sols = []
+    for C in findsubsets(eqs, len(params)):
+        temp = solve(C, params)
+        if len(temp) == len(params):
+            sols.append(temp)
+    return sols[0]
 
 ###############################
 # Initialize variables
@@ -104,11 +121,18 @@ Ds = Symbol('D_s')
 # List Based Dictionary Creation
 #################################
 
+def str_usc(A, f):
+    if f in A[0]:
+        return f
+    else:
+        dummy = [s for s in A[1] if s in f][0]
+        return dummy + "_"*int(len(f) > len(dummy)) + f[len(dummy):]
+
 def str_sym(A, n):
     B = {}
     for i in range(len(A[1])):
         for j in range(len(A[0])):
-            B = merge_two_dicts(B, dict((p, symbols(str(p[0]) + '_'*(1 - int(len(p)==1)) + str(p[1:]))) for p in fullJet(A[0], A[1], n+1)))
+            B = merge_two_dicts(B, dict((p, symbols(str_usc(A, p))) for p in fullJet(A[0], A[1], n+1)))
     return B
 
 def str_fun(A, n):
@@ -183,27 +207,34 @@ def moving_frame(B, S, T):
 
 def create_normals(B, E, T):
     A_jet = E[1]
+    K = T[2]
     cross_section_indx = T[3]
 
     C = initialize_normals(B)
     normals_substitution = dict((symbols(A_jet[i]), symbols(C[i])) for i in range(len(A_jet)))
+    j = 0
     for i in cross_section_indx:
-        normals_substitution[symbols(A_jet[i])] = 0
+        normals_substitution[symbols(A_jet[i])] = K[j]
+        j += 1
     return normals_substitution
 
-def gen_invs(B, T):
+def gen_invs(B, S, T):
     A = B[0]
     n = B[1]
+    K = T[3]
     normals_substitution = T[9]
 
     t = len(A[1])
     C1 = []
     C2 = []
     for i in range(t):
-        C3 = [str(p[0]) + '_'*(1 - int(len(p)==1)) + str(p[1:]) for p in fullJet(A[0], A[1][i], n)]
-        y = np.trim_zeros([symbols(C3[i]).subs(normals_substitution) for i in range(len(C3))])[0]
+        s = A[1][i]
+        C3 = [str(p[:len(s)]) + '_'*(1-len(p)==len(s)) + str(p[len(s):]) for p in fullJet(A[0], [A[1][i]], n)]
+        y = filter(lambda a: a not in K, [symbols(C3[i]).subs(S[0]).subs(normals_substitution) for i in range(len(C3))])[0]
         C1.append(y)
-        C2.append(symbols('kappa^' + str(y)[2]))
+        start = str(y).index('^')
+        stop = str(y).index('_')
+        C2.append(symbols('kappa_' + str(y)[start+1:stop]))
     return dict((k, v) for k, v in zip(C1, C2))
 
 def rec_Relations(B, S, T):
@@ -223,7 +254,7 @@ def rec_Relations(B, S, T):
         C2.insert(0, 1)
         expression = sum([a*b for (a, b) in zip(C1, C2)])
         C.append(expression)
-    return solve(C, Ri)
+    return find_solutions(C, Ri)
 
 def rec_Relations_Forms(B, S, T, E):
     r = B[3]
@@ -247,7 +278,7 @@ def rec_Relations_Forms(B, S, T, E):
         expression = sum([a*b for (a, b) in zip(C1, C2)])
         Z.append(expression)
         j  += 1
-    return solve(Z, ep)
+    return find_solutions(Z, ep)
 
 def contact_Reduction(B, S, T):
     A = B[0]
@@ -414,7 +445,7 @@ def inv_vert_diff(B, S, T, var_index, i):
     rec_forms = T[12]
 
     expr = contact_symbol[var_index + 2*i + 1]
-    C = [(rec_forms[ep[j]])*(Prolong(A, vectors[j], i)[1 + var_index + 2*i]).xreplace(S[5]).xreplace(normals_substitution).xreplace(curvature_subs) for j in range(r)]
+    C = [simplify((rec_forms[ep[j]])*(Prolong(A, vectors[j], i)[1 + var_index + 2*i])+0*x).xreplace(S[5]).xreplace(normals_substitution).xreplace(curvature_subs) for j in range(r)]
     return expr + sum(C)
 
 def inv_Euler(B, S, T):
@@ -469,10 +500,10 @@ def Cross_section_validate(B, S, T):
     for i in range(len(vects)):
         temp.append([vects[i][j] for j in cross_section_indx])
     M = Matrix(temp)
-    if simplify(M.det()) == 0:
-        return 0
-    else:
+    if min(M.shape) == M.rank() :
         return 1
+    else:
+        return 0
 
 def Cross_section_determinant(B, S, T):
     A = B[0]
@@ -508,7 +539,7 @@ class groupAction:
     def __init__(self, A, params, n):
 
         # dictionary/list creation
-        self.A_jet = [str(p[0]) + '_'*(1 - int(len(p)==1)) + str(p[1:]) for p in fullJet(A[0], A[1], n)]
+        self.A_jet = [str_usc(A, p) for p in fullJet(A[0], A[1], n)]
         self.A_jet_no_underscore = fullJet(A[0], A[1], n)
         self.A_flat = [item for sublist in A for item in sublist]
         self.m = len(self.A_flat)
@@ -599,6 +630,7 @@ class groupAction:
         self.gen_subs.append(self.vectors)
 
         # Preform a cross-section validation test
+        # self.cross_validate = 1
         self.cross_validate = self.validate()
         if self.cross_validate == 0:
             print('The chosen cross-section is not valid. Try another cross-section.')
@@ -633,7 +665,7 @@ class groupAction:
             self.gen_subs.append(self.normals_substitution)
 
             # Create dictionary for curvature invariant substitution
-            self.curvature_subs = gen_invs(B, self.gen_subs)
+            self.curvature_subs = gen_invs(B, S, self.gen_subs)
             self.gen_subs.append(self.curvature_subs)        
             
             # Create the dictionary of Maurer-Cartan invariants and add to gen_subs
