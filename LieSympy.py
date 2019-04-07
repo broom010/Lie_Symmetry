@@ -161,6 +161,26 @@ def Contact_sym(A, n):
                 contact_sym.append(symbols('vartheta^' + p + '_' + str(i)))
     return contact_sym
 
+def Contact_sym_plain(A, n):
+    contact_sym = [0]
+    for i in range(n):
+        for p in A[1]:
+            if i == 0:
+                contact_sym.append(symbols('theta^' + p))
+            else:
+                contact_sym.append(symbols('theta^' + p + '_' + str(i)))
+    return contact_sym
+
+def Contact_sym_plain_nc(A, n):
+    contact_sym = [0]
+    for i in range(n):
+        for p in A[1]:
+            if i == 0:
+                contact_sym.append(symbols('theta^' + p, commutative=False))
+            else:
+                contact_sym.append(symbols('theta^' + p + '_' + str(i), commutative=False))
+    return contact_sym
+
 def Contact_sym_nc(A, n):
     contact_sym = [0]
     for i in range(n):
@@ -289,6 +309,12 @@ def contact_Reduction(B, S, T):
     contact_zeros = dict((p, 0) for p in contact_symbol)
     return [contact_reduction, [contact_zeros]]
 
+def make_B(A, n):
+    return [A, n, 0, 0, 0, 0, 0, Contact_sym_plain_nc(A, n), dict((p, 0) for p in Contact_sym(A, n))]
+
+def make_S(A, n):
+    return [str_sym(A, n), reverse_dict(str_sym(A, n)), str_fun(A, n), reverse_dict(str_fun(A, n)), sym_fun(A, n), reverse_dict(sym_fun(A, n))]
+
 ###############################
 # Function Definitions
 ###############################
@@ -346,7 +372,7 @@ def apply_vect(B, S, v, f):
     vect = Prolong(A, v, n)
     g = 0
     for i in range(len(vect)):
-        g = g + diff(f, S[0][var[i]])*v[i]
+        g = g + diff(f, S[0][var[i]])*vect[i]
     return g.subs(S[5])
 
 def vect_Field(B, S, T, y):
@@ -484,6 +510,11 @@ def invariant_Hamilton(B, S, T):
         expr = expr + C
     return Matrix([expr.subs({contact_symbol[j + 1]:1}).subs(contact_zeros).subs({Ds: - Ds}).xreplace(normals_substitution).xreplace(curvature_subs) for j in range(len(A[1]))])
 
+def inv_contact(A, n, X, f, fx):
+    B = make_B(A,n)
+    S = make_S(A,n)
+    return vertical_diff(B, S, f) - fx.subs(S[5])*vertical_diff(B, S, X)
+
 ###############################
 # Test/Validation Methods
 ###############################
@@ -533,6 +564,41 @@ def Cross_section_matrix(B, S, T):
     M = Matrix(temp)
     return M
 
+######################################
+# Detailed Lie Derivative of Forms
+#####################################
+
+def interior_prod(v,w):
+    return [simplify(w[i]*v[i]) for i in range(len(w))]
+
+def ext_diff(A, n, f):
+    A_jet = [str_usc(A, p) for p in fullJet(A[0], A[1], n)]
+    return [diff(f,symbols(var)) for var in A_jet]
+
+def two_form_diff(A, n, w):
+    A_jet = [str_usc(A, p) for p in fullJet(A[0], A[1], n)]
+    C = []
+    for i in range(len(A_jet)):
+        vec = w+[0 for j in range(len(A_jet)-len(w))]
+        temp = [diff(vec[i], symbols(var)) for var in A_jet]
+        temp[i] = 0
+        C.append(temp)
+    return Matrix(C)-Matrix(C).transpose()
+
+def int_two_prod(A, n, v, w):
+    A_jet = [str_usc(A, p) for p in fullJet(A[0], A[1], n)]
+    W = [0 for i in range(len(A_jet))]
+    O = two_form_diff(A, n, w).transpose()
+    for i in range(len(W)):
+        W[i] = -sum(interior_prod(v, O[i,:]))
+    return W
+
+def Lie_derivative(A, n, v, w):
+    temp = [simplify(c+d) for c,d in zip(ext_diff(A, n, sum(interior_prod(v,w))),int_two_prod(A, n, v, w))]
+    symbs = Contact_sym_plain(A, n)
+    for i in range(1,len(symbs)):
+        symbs[i] = symbols(str(symbs[i]),commutative=False)
+    return sum([(c*d) for c,d in zip(temp, symbs)])
 
 class groupAction:
 
