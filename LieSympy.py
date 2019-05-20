@@ -33,7 +33,7 @@ def divUJi(X, U, u, J, i):
     
 def totDiv(X, U, P, i, n):
     expr = diff(P, X[i])
-    J = filter(lambda v: v not in X, fullJet(X, U, n))
+    J = list(filter(lambda v: v not in X, fullJet(X, U, n)))
     for j in range(len(J)):
         expr = expr + diff(P, J[j])*uJalpha(J[j], X[i], X, U)
     return expr
@@ -94,7 +94,7 @@ def merge_two_dicts(x, y):
     return z
 
 def reverse_dict(D):
-    return {v: k for k, v in D.iteritems()}
+    return {v: k for k, v in D.items()}
 
 def findsubsets(S,m):
     return set(combinations(S, m))
@@ -250,12 +250,12 @@ def gen_invs(B, S, T):
     for i in range(t):
         s = A[1][i]
         C3 = [str(p[:len(s)]) + '_'*(1-len(p)==len(s)) + str(p[len(s):]) for p in fullJet(A[0], [A[1][i]], n)]
-        y = filter(lambda a: a not in K, [symbols(C3[i]).subs(S[0]).subs(normals_substitution) for i in range(len(C3))])[0]
+        y = str(list(filter(lambda a: a not in K, [symbols(C3[i]).subs(S[0]).subs(normals_substitution) for i in range(len(C3))]))[0])
         C1.append(y)
         start = str(y).index('^')
         stop = str(y).index('_')
         C2.append(symbols('kappa_' + str(y)[start+1:stop]))
-    return dict((k, v) for k, v in zip(C1, C2))
+    return dict((symbols(k), v) for k, v in zip(C1, C2))
 
 def rec_Relations(B, S, T):
     r = B[3]
@@ -326,7 +326,7 @@ def add_Diff_Forms(C, D):
     return [a + b for a, b in zip(C, D)]
 
 def total_diff(S, f):
-    var = copy.copy(S[0].keys())
+    var = copy.copy(list(S[0].keys()))
     var.remove('x')
     var.sort()
     expr = diff(f, x) + 0*x
@@ -672,7 +672,7 @@ class groupAction:
 
         # Initialized the creation of substitution dictionaries for transformed coordinates
         self.transformed_subs_backward = {symbols(self.A_flat[i]): expression[i].xreplace(S[5])  for i in range(self.m)}
-        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
+        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.items()}
 
         # Create gen_subs (This will serve as the T list that is passed to many of the dictionary creation functions)
         self.gen_subs = [self.identity, self.transform, self.K, self.cross_section_indx, self.transformed_subs_backward, self.transformed_subs_forward]
@@ -682,7 +682,7 @@ class groupAction:
             for p in A[1]:
                 self.transform.append(Dnx(B, E, S, self.gen_subs, symbols(p), i))
         self.transformed_subs_backward = {symbols(self.A_jet[i]): self.transform[i].xreplace(S[5])  for i in range(len(self.A_jet))}
-        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.iteritems()}
+        self.transformed_subs_forward = {v: k for k, v in self.transformed_subs_backward.items()}
 
         # Update the transformed substitution dictionaries in gen_subs
         self.gen_subs[-2] = self.transformed_subs_backward
